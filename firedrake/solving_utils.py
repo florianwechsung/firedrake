@@ -137,7 +137,7 @@ class _SNESContext(object):
     get the context (which is one of these objects) to find the
     Firedrake level information.
     """
-    def __init__(self, problem, mat_type, pmat_type, appctx=None):
+    def __init__(self, problem, mat_type, pmat_type, appctx=None, pre_jacobian_callback=None, pre_function_callback=None):
         if pmat_type is None:
             pmat_type = mat_type
         self.mat_type = mat_type
@@ -147,6 +147,8 @@ class _SNESContext(object):
         pmatfree = pmat_type == 'matfree'
 
         self._problem = problem
+        self._pre_jacobian_callback = pre_jacobian_callback
+        self._pre_function_callback = pre_function_callback
         # Build the jacobian with the correct sparsity pattern.  Note
         # that since matrix assembly is lazy this doesn't actually
         # force an additional assembly of the matrix since in
@@ -284,6 +286,8 @@ class _SNESContext(object):
         with ctx._x.dat.vec as v:
             X.copy(v)
 
+        if ctx._pre_function_callback is not None:
+            ctx._pre_function_callback(X)
         assemble(ctx.F, tensor=ctx._F,
                  form_compiler_parameters=problem.form_compiler_parameters)
         # no mat_type -- it's a vector!
@@ -321,6 +325,8 @@ class _SNESContext(object):
         # copy guess in from X.
         with ctx._x.dat.vec as v:
             X.copy(v)
+        if ctx._pre_jacobian_callback is not None:
+            ctx._pre_jacobian_callback(X)
         assemble(ctx.J,
                  tensor=ctx._jac,
                  bcs=problem.bcs,

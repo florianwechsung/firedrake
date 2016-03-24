@@ -109,6 +109,8 @@ class NonlinearVariationalSolver(solving_utils.ParametersMixin):
         nullspace = kwargs.get("nullspace")
         nullspace_T = kwargs.get("transpose_nullspace")
         options_prefix = kwargs.get("options_prefix")
+        pre_j_callback = kwargs.get("pre_jacobian_callback")
+        pre_f_callback = kwargs.get("pre_function_callback")
 
         super(NonlinearVariationalSolver, self).__init__(parameters, options_prefix)
 
@@ -123,7 +125,9 @@ class NonlinearVariationalSolver(solving_utils.ParametersMixin):
         ctx = solving_utils._SNESContext(problem,
                                          mat_type=mat_type,
                                          pmat_type=pmat_type,
-                                         appctx=appctx)
+                                         appctx=appctx,
+                                         pre_jacobian_callback=pre_j_callback,
+                                         pre_function_callback=pre_f_callback)
 
         # No preconditioner by default for matrix-free
         if (problem.Jp is not None and pmatfree) or matfree:
