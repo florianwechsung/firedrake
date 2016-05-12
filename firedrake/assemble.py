@@ -221,8 +221,7 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
         def mat(testmap, trialmap, i, j):
             return tensor[i, j](op2.INC,
                                 (testmap(test.function_space()[i])[op2.i[0]],
-                                 trialmap(trial.function_space()[j])[op2.i[1]]),
-                                flatten=True)
+                                 trialmap(trial.function_space()[j])[op2.i[1]]))
         result = lambda: result_matrix
     elif is_vec:
         test = f.arguments()[0]
@@ -236,8 +235,7 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
 
         def vec(testmap, i):
             return tensor[i](op2.INC,
-                             testmap(test.function_space()[i])[op2.i[0]],
-                             flatten=True)
+                             testmap(test.function_space()[i])[op2.i[0]])
         result = lambda: result_function
     else:
         # 0-forms are always scalar
@@ -380,14 +378,14 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
 
             coords = m.coordinates
             args = [kernel, itspace, tensor_arg,
-                    coords.dat(op2.READ, get_map(coords), flatten=True)]
+                    coords.dat(op2.READ, get_map(coords))]
             if needs_orientations:
                 o = m.cell_orientations()
-                args.append(o.dat(op2.READ, get_map(o), flatten=True))
+                args.append(o.dat(op2.READ, get_map(o)))
             for n in coeff_map:
                 c = coefficients[n]
                 for c_ in c.split():
-                    args.append(c_.dat(op2.READ, get_map(c_), flatten=True))
+                    args.append(c_.dat(op2.READ, get_map(c_)))
 
             args.extend(extra_args)
             try:
