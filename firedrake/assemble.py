@@ -14,7 +14,8 @@ from firedrake import matrix
 from firedrake import parameters
 from firedrake import solving
 from firedrake import utils
-# from firedrake.static_condensation import slate
+from firedrake.slate import slate
+from firedrake.slate import hfc
 
 
 __all__ = ["assemble"]
@@ -118,7 +119,7 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
     form_compiler_parameters["assemble_inverse"] = inverse
 
     if isinstance(f, slate.Tensor):
-        kernels = slate.compile_slate_expression(f)
+        kernels = hfc.compile_slate_expression(f)
     else:
         kernels = tsfc_interface.compile_form(f, "form", parameters=form_compiler_parameters, inverse=inverse)
     rank = len(f.arguments())
@@ -390,7 +391,6 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
                 c = coefficients[n]
                 for c_ in c.split():
                     args.append(c_.dat(op2.READ, get_map(c_), flatten=True))
-
             if needs_cell_facets:
                 assert integral_type == "cell"
                 extra_args.append(m.cell_to_facet_map(op2.READ))
