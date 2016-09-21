@@ -246,6 +246,7 @@ def compile_ufl_kernel(expression, to_pts, to_element, fs):
     ir = fem.compile_ufl(expression,
                          cell=fs.mesh().ufl_cell(),
                          points=to_pts,
+                         weights=None,
                          point_index=point_index,
                          coefficient=builder.coefficient,
                          cell_orientation=builder.cell_orientation)
