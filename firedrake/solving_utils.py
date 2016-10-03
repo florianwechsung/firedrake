@@ -175,7 +175,8 @@ class _SNESContext(object):
         self._jac = assemble(self.J, bcs=problem.bcs,
                              form_compiler_parameters=problem.form_compiler_parameters,
                              mat_type=mat_type,
-                             appctx=appctx)
+                             appctx=appctx,
+                             allocate_only=True)
         self.is_mixed = self._jac.block_shape != (1, 1)
 
         if mat_type != pmat_type or problem.Jp is not None:
@@ -188,7 +189,8 @@ class _SNESContext(object):
             self._pjac = assemble(self.Jp, bcs=problem.bcs,
                                   form_compiler_parameters=problem.form_compiler_parameters,
                                   mat_type=pmat_type,
-                                  appctx=appctx)
+                                  appctx=appctx,
+                                  allocate_only=True)
         else:
             # pmat_type == mat_type and Jp is None
             self.Jp = None
@@ -284,8 +286,13 @@ class _SNESContext(object):
         with ctx._x.dat.vec as v:
             X.copy(v)
 
-        assemble(ctx.F, tensor=ctx._F,
-                 form_compiler_parameters=problem.form_compiler_parameters)
+        if not hasattr(ctx, "_residual_loops"):
+            loops = assemble(ctx.F, tensor=ctx._F,
+                             form_compiler_parameters=problem.form_compiler_parameters,
+                             collect_loops=True)
+            ctx._residual_loops = loops
+        for l in ctx._residual_loops:
+            l()
         # no mat_type -- it's a vector!
         for bc in problem.bcs:
             bc.zero(ctx._F)
@@ -321,19 +328,41 @@ class _SNESContext(object):
         # copy guess in from X.
         with ctx._x.dat.vec as v:
             X.copy(v)
-        assemble(ctx.J,
-                 tensor=ctx._jac,
-                 bcs=problem.bcs,
-                 form_compiler_parameters=problem.form_compiler_parameters,
-                 mat_type=ctx.mat_type)
+        if ctx.mat_type == "matfree":
+            assemble(ctx.J,
+                             tensor=ctx._jac,
+                             bcs=problem.bcs,
+                             form_compiler_parameters=problem.form_compiler_parameters,
+                             mat_type=ctx.mat_type)
+        else:
+            if not hasattr(ctx, "_jac_loops"):
+                loops = assemble(ctx.J,
+                                 tensor=ctx._jac,
+                                 bcs=problem.bcs,
+                                 form_compiler_parameters=problem.form_compiler_parameters,
+                                 mat_type=ctx.mat_type, collect_loops=True)
+                ctx._jac_loops = loops
+            for l in ctx._jac_loops:
+                l()
         ctx._jac.force_evaluation()
         if ctx.Jp is not None:
             assert P.handle == ctx._pjac.petscmat.handle
-            assemble(ctx.Jp,
-                     tensor=ctx._pjac,
-                     bcs=problem.bcs,
-                     form_compiler_parameters=problem.form_compiler_parameters,
-                     mat_type=ctx.pmat_type)
+            if ctx.pmat_type == "matfree":
+                assemble(ctx.Jp,
+                                 tensor=ctx._pjac,
+                                 bcs=problem.bcs,
+                                 form_compiler_parameters=problem.form_compiler_parameters,
+                                 mat_type=ctx.pmat_type)
+            else:
+                if not hasattr(ctx, "_pjac_loops"):
+                    loops = assemble(ctx.Jp,
+                                     tensor=ctx._pjac,
+                                     bcs=problem.bcs,
+                                     form_compiler_parameters=problem.form_compiler_parameters,
+                                     mat_type=ctx.pmat_type, collect_loops=True)
+                    ctx._pjac_loops = loops
+                for l in ctx._pjac_loops:
+                    l()
             ctx._pjac.force_evaluation()
 
     @staticmethod
