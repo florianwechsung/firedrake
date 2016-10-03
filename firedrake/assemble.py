@@ -4,7 +4,6 @@ import ufl
 from collections import defaultdict
 
 from pyop2 import op2
-from pyop2.base import collecting_loops
 from pyop2.exceptions import MapValueError
 
 from firedrake import assemble_expressions
@@ -224,7 +223,7 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
             # Replace any bcs on the tensor we passed in
             result_matrix.bcs = bcs
             tensor = tensor._M
-            zero_tensor = lambda: tensor.zero()
+            zero_tensor = tensor.zero
 
         def mat(testmap, trialmap, i, j):
             return tensor[i, j](op2.INC,
@@ -243,7 +242,7 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
         else:
             result_function = tensor
             tensor = result_function.dat
-            zero_tensor = lambda: tensor.zero()
+            zero_tensor = tensor.zero
 
         def vec(testmap, i):
             return tensor[i](op2.INC,
@@ -288,6 +287,10 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
     # assembly and stash that on the Matrix object.  When we hit a
     # solve, we funcall the closure with any bcs the Matrix now has to
     # assemble it.
+
+    # In collecting loops mode, we collect the loops, and assume the
+    # boundary conditions provided are the ones we want.  It therefore
+    # is only used inside residual and jacobian assembly.
     loops = []
     def thunk(bcs):
         if collect_loops:
@@ -455,6 +458,7 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
         return result()
 
     if collect_loops:
+        from pyop2.base import collecting_loops
         with collecting_loops():
             thunk(bcs)
             return loops
