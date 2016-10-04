@@ -93,9 +93,21 @@ class AssembledPC(PCBase):
             raise ValueError("Only makes sense to invert diagonal block")
 
         mat_type = PETSc.Options().getString(prefix + "assembled_mat_type", "aij")
-        self.P = assemble(context.a, bcs=context.row_bcs,
-                          form_compiler_parameters=context.fc_params,
-                          mat_type=mat_type)
+        if mat_type != "matfree":
+            self.P = assemble(context.a, bcs=context.row_bcs,
+                              form_compiler_parameters=context.fc_params,
+                              mat_type=mat_type, allocate_only=True)
+            self._P_loops = assemble(context.a, tensor=self.P,
+                                     bcs=context.row_bcs,
+                                     form_compiler_parameters=context.fc_params,
+                                     mat_type=mat_type, collect_loops=True)
+            for l in self._P_loops:
+                l()
+        else:
+            self.P = assemble(context.a, bcs=context.row_bcs,
+                              form_compiler_parameters=context.fc_params,
+                              mat_type=mat_type)
+        self.mat_type = mat_type
         self.P.force_evaluation()
 
         # Transfer nullspace over
@@ -114,10 +126,12 @@ class AssembledPC(PCBase):
         self.pc = pc
 
     def update(self, pc):
-        from firedrake import assemble
-        P = self.P
-        P = assemble(P.a, tensor=P, bcs=P.bcs)
-        P.force_evaluation()
+        if self.mat_type == "matfree":
+            self.P.assemble()
+        else:
+            for l in self._P_loops:
+                l()
+        self.P.force_evaluation()
 
     def apply(self, pc, x, y):
         self.pc.apply(x, y)
@@ -304,15 +318,27 @@ class PCDPC(PCBase):
         fp = 1.0/Re * inner(grad(p), grad(q))*dx + inner(u0, grad(p))*q*dx
 
         self.Re = Re
-        self.Fp = assemble(fp, form_compiler_parameters=context.fc_params,
-                           mat_type=self.Fp_mat_type)
+        if self.Fp_mat_type != "matfree":
+            self.Fp = assemble(fp, form_compiler_parameters=context.fc_params,
+                               mat_type=self.Fp_mat_type, allocate_only=True)
+            self._Fp_loops = assemble(fp, tensor=self.Fp,
+                                      form_compiler_parameters=context.fc_params,
+                                      mat_type=self.Fp_mat_type, collect_loops=True)
+            for l in self._Fp_loops:
+                l()
+        else:
+            self.Fp = assemble(fp, form_compiler_parameters=context.fc_params,
+                               mat_type=self.Fp_mat_type)
         self.Fp.force_evaluation()
         Fpmat = self.Fp.petscmat
         self.workspace = [Fpmat.createVecLeft() for i in (0, 1)]
 
     def update(self, pc):
-        from firedrake import assemble
-        assemble(self.Fp.a, tensor=self.Fp, mat_type=self.Fp_mat_type)
+        if self.Fp_mat_type == "matfree":
+            self.Fp.assemble()
+        else:
+            for l in self._Fp_loops:
+                l()
         self.Fp.force_evaluation()
 
     def apply(self, pc, x, y):

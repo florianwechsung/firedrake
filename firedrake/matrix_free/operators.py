@@ -112,8 +112,6 @@ class ImplicitMatrixContext(object):
         self.actionT = action(self.aT, self._y)
 
     def mult(self, mat, X, Y):
-        from firedrake.assemble import assemble
-
         with self._x.dat.vec as v:
             X.copy(v)
 
@@ -135,8 +133,14 @@ class ImplicitMatrixContext(object):
         for bc in self.col_bcs:
             bc.zero(self._x)
 
-        assemble(self.action, tensor=self._y,
-                 form_compiler_parameters=self.fc_params)
+        if not hasattr(self, "_action_loops"):
+            from firedrake.assemble import assemble
+            loops = assemble(self.action, tensor=self._y,
+                             form_compiler_parameters=self.fc_params,
+                             collect_loops=True)
+            self._action_loops = loops
+        for l in self._action_loops:
+            l()
 
         # This sets the essential boundary condition values on the
         # result.
@@ -152,8 +156,6 @@ class ImplicitMatrixContext(object):
 
     def multTranspose(self, mat, Y, X):
         # As for mult, just everything swapped round.
-        from firedrake.assemble import assemble
-
         with self._y.dat.vec as v:
             Y.copy(v)
         if self.on_diag:  # stash BC values for later
@@ -163,6 +165,14 @@ class ImplicitMatrixContext(object):
         for bc in self.row_bcs:
             bc.zero(self._y)
 
+        if not hasattr(self, "_actionT_loops"):
+            from firedrake.assemble import assemble
+            loops = assemble(self.action, tensor=self._y,
+                             form_compiler_parameters=self.fc_params,
+                             collect_loops=True)
+            self._actionT_loops = loops
+        for l in self._actionT_loops:
+            l()
         assemble(self.actionT, self._x,
                  form_compiler_parameters=self.fc_params)
 
