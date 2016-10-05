@@ -90,6 +90,10 @@ class NonlinearVariationalSolver(solving_utils.ParametersMixin):
                created.  Use this option if you want to pass options
                to the solver from the command line in addition to
                through the ``solver_parameters`` dict.
+        :kwarg pre_jacobian_callback: A user-defined function that
+               will be called immediately before Jacobian assembly
+        :kwarg pre_function_callback: A user-defined function that
+               will be called immediately before residual assembly
 
         .. code-block:: python
 
