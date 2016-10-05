@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 import numpy
+import operator
+import functools
 import ufl
 from collections import defaultdict
 
@@ -86,6 +88,26 @@ def assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
         return assemble_expressions.assemble_expression(f)
     else:
         raise TypeError("Unable to assemble: %r" % f)
+
+
+def allocate_matrix(f, bcs=None, form_compiler_parameters=None,
+                    inverse=False, mat_type=None, appctx={}):
+    return _assemble(f, bcs=bcs, form_compiler_parameters=form_compiler_parameters,
+                     inverse=inverse, mat_type=mat_type, appctx=appctx,
+                     allocate_only=True)
+
+
+def create_assembly_callable(f, tensor=None, bcs=None, form_compiler_parameters=None,
+                             inverse=False, mat_type=None):
+    if tensor is None:
+        raise ValueError("Have to provide tensor to write to")
+    if mat_type == "matfree":
+        return tensor.assemble
+    loops = _assemble(f, tensor=tensor, bcs=bcs,
+                      form_compiler_parameters=form_compiler_parameters,
+                      inverse=inverse, mat_type=mat_type,
+                      collect_loops=True)
+    return functools.partial(map, operator.methodcaller("__call__"), loops)
 
 
 @utils.known_pyop2_safe
@@ -294,6 +316,7 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
     # boundary conditions provided are the ones we want.  It therefore
     # is only used inside residual and jacobian assembly.
     loops = []
+
     def thunk(bcs):
         if collect_loops:
             loops.append(zero_tensor)

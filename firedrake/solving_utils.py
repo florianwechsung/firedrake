@@ -138,6 +138,7 @@ class _SNESContext(object):
     Firedrake level information.
     """
     def __init__(self, problem, mat_type, pmat_type, appctx=None):
+        from firedrake.assemble import allocate_matrix, create_assembly_callable
         if pmat_type is None:
             pmat_type = mat_type
         self.mat_type = mat_type
@@ -147,12 +148,8 @@ class _SNESContext(object):
         pmatfree = pmat_type == 'matfree'
 
         self._problem = problem
-        # Build the jacobian with the correct sparsity pattern.  Note
-        # that since matrix assembly is lazy this doesn't actually
-        # force an additional assembly of the matrix since in
-        # form_jacobian we call assemble again which drops this
-        # computation on the floor.
-        from firedrake.assemble import assemble
+
+        fcp = problem.form_compiler_parameters
         # Function to hold current guess
         self._x = problem.u
 
@@ -172,11 +169,16 @@ class _SNESContext(object):
         self.pmatfree = pmatfree
         self.F = problem.F
         self.J = problem.J
-        self._jac = assemble(self.J, bcs=problem.bcs,
-                             form_compiler_parameters=problem.form_compiler_parameters,
-                             mat_type=mat_type,
-                             appctx=appctx,
-                             allocate_only=True)
+
+        self._jac = allocate_matrix(self.J, bcs=problem.bcs,
+                                    form_compiler_parameters=fcp,
+                                    mat_type=mat_type,
+                                    appctx=appctx)
+        self._assemble_jac = create_assembly_callable(self.J,
+                                                      tensor=self._jac,
+                                                      bcs=problem.bcs,
+                                                      form_compiler_parameters=fcp,
+                                                      mat_type=mat_type)
         self.is_mixed = self._jac.block_shape != (1, 1)
 
         if mat_type != pmat_type or problem.Jp is not None:
@@ -186,17 +188,26 @@ class _SNESContext(object):
                 self.Jp = self.J
             else:
                 self.Jp = problem.Jp
-            self._pjac = assemble(self.Jp, bcs=problem.bcs,
-                                  form_compiler_parameters=problem.form_compiler_parameters,
-                                  mat_type=pmat_type,
-                                  appctx=appctx,
-                                  allocate_only=True)
+            self._pjac = allocate_matrix(self.Jp, bcs=problem.bcs,
+                                         form_compiler_parameters=fcp,
+                                         mat_type=pmat_type,
+                                         appctx=appctx)
+
+            self._assemble_pjac = create_assembly_callable(self.Jp,
+                                                           tensor=self._pjac,
+                                                           bcs=problem.bcs,
+                                                           form_compiler_parameters=fcp,
+                                                           mat_type=mat_type)
         else:
             # pmat_type == mat_type and Jp is None
             self.Jp = None
             self._pjac = self._jac
 
         self._F = function.Function(self.F.arguments()[0].function_space())
+        self._assemble_residual = create_assembly_callable(self.F,
+                                                           tensor=self._F,
+                                                           form_compiler_parameters=fcp)
+
         self._jacobian_assembled = False
         self._splits = {}
         self._coarse = None
@@ -276,8 +287,6 @@ class _SNESContext(object):
         :arg X: the current guess (a Vec)
         :arg F: the residual at X (a Vec)
         """
-        from firedrake.assemble import assemble
-
         dm = snes.getDM()
         ctx = dmhooks.get_appctx(dm)
         problem = ctx._problem
@@ -286,13 +295,8 @@ class _SNESContext(object):
         with ctx._x.dat.vec as v:
             X.copy(v)
 
-        if not hasattr(ctx, "_residual_loops"):
-            loops = assemble(ctx.F, tensor=ctx._F,
-                             form_compiler_parameters=problem.form_compiler_parameters,
-                             collect_loops=True)
-            ctx._residual_loops = loops
-        for l in ctx._residual_loops:
-            l()
+        ctx._assemble_residual()
+
         # no mat_type -- it's a vector!
         for bc in problem.bcs:
             bc.zero(ctx._F)
@@ -311,8 +315,6 @@ class _SNESContext(object):
         :arg J: the Jacobian (a Mat)
         :arg P: the preconditioner matrix (a Mat)
         """
-        from firedrake.assemble import assemble
-
         dm = snes.getDM()
         ctx = dmhooks.get_appctx(dm)
         problem = ctx._problem
@@ -328,41 +330,12 @@ class _SNESContext(object):
         # copy guess in from X.
         with ctx._x.dat.vec as v:
             X.copy(v)
-        if ctx.mat_type == "matfree":
-            assemble(ctx.J,
-                             tensor=ctx._jac,
-                             bcs=problem.bcs,
-                             form_compiler_parameters=problem.form_compiler_parameters,
-                             mat_type=ctx.mat_type)
-        else:
-            if not hasattr(ctx, "_jac_loops"):
-                loops = assemble(ctx.J,
-                                 tensor=ctx._jac,
-                                 bcs=problem.bcs,
-                                 form_compiler_parameters=problem.form_compiler_parameters,
-                                 mat_type=ctx.mat_type, collect_loops=True)
-                ctx._jac_loops = loops
-            for l in ctx._jac_loops:
-                l()
+
+        ctx._assemble_jac()
         ctx._jac.force_evaluation()
         if ctx.Jp is not None:
             assert P.handle == ctx._pjac.petscmat.handle
-            if ctx.pmat_type == "matfree":
-                assemble(ctx.Jp,
-                                 tensor=ctx._pjac,
-                                 bcs=problem.bcs,
-                                 form_compiler_parameters=problem.form_compiler_parameters,
-                                 mat_type=ctx.pmat_type)
-            else:
-                if not hasattr(ctx, "_pjac_loops"):
-                    loops = assemble(ctx.Jp,
-                                     tensor=ctx._pjac,
-                                     bcs=problem.bcs,
-                                     form_compiler_parameters=problem.form_compiler_parameters,
-                                     mat_type=ctx.pmat_type, collect_loops=True)
-                    ctx._pjac_loops = loops
-                for l in ctx._pjac_loops:
-                    l()
+            ctx._assemble_pjac()
             ctx._pjac.force_evaluation()
 
     @staticmethod
@@ -373,7 +346,6 @@ class _SNESContext(object):
         :arg J: the Jacobian (a Mat)
         :arg P: the preconditioner matrix (a Mat)
         """
-        from firedrake.assemble import assemble
         from firedrake import inject
         dm = ksp.getDM()
         ctx = dmhooks.get_appctx(dm)
@@ -392,17 +364,9 @@ class _SNESContext(object):
             for bc in ctx._problem.bcs:
                 bc.apply(ctx._x)
 
-        assemble(ctx.J,
-                 tensor=ctx._jac,
-                 bcs=problem.bcs,
-                 form_compiler_parameters=problem.form_compiler_parameters,
-                 mat_type=ctx.mat_type)
+        ctx._assemble_jac()
         ctx._jac.force_evaluation()
         if ctx.Jp is not None:
             assert P.handle == ctx._pjac.petscmat.handle
-            assemble(ctx.Jp,
-                     tensor=ctx._pjac,
-                     bcs=problem.bcs,
-                     form_compiler_parameters=problem.form_compiler_parameters,
-                     mat_type=ctx.pmat_type)
+            ctx._assemble_pjac()
             ctx._pjac.force_evaluation()
