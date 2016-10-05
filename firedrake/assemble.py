@@ -146,6 +146,8 @@ def _assemble(f, tensor=None, bcs=None, form_compiler_parameters=None,
     nest = mat_type == "nest"
     if is_mat:
         if matfree:  # intercept matrix-free matrices here
+            if inverse:
+                raise NotImplementedError("Inverse not implemented with matfree")
             if collect_loops:
                 raise NotImplementedError("Can't collect loops with matfree")
             if tensor is None:
