@@ -130,6 +130,10 @@ class _SNESContext(object):
     :arg appctx: Any extra information used in the assembler.  For the
         matrix-free case this will contain the Newton state in
         ``"state"``.
+    :arg pre_jacobian_callback: A user-defined function that will
+        be called immediately before Jacobian assembly
+    :arg pre_function_callback: A user-defined function that will
+        be called immediately before residual assembly
 
     The idea here is that the SNES holds a shell DM which contains
     this object as "user context".  When the SNES calls back to the
