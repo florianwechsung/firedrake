@@ -458,6 +458,13 @@ class _SNESContext(object):
         with ctx._x.dat.vec_wo as v:
             X.copy(v)
 
+        fine = ctx._fine
+        if fine is not None:
+            from firedrake import inject
+            inject(fine._x, ctx._x)
+            for bc in ctx._problem.bcs:
+                bc.apply(ctx._x)
+
         if ctx._pre_jacobian_callback is not None:
             ctx._pre_jacobian_callback(X)
 
