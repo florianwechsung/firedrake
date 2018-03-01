@@ -89,7 +89,9 @@ def coarsen_form(form, coefficient_mapping=None):
         new_itg = it.reconstruct(integrand=integrand,
                                  domain=new_mesh)
         integrals.append(new_itg)
-    return ufl.Form(integrals)
+    form = ufl.Form(integrals)
+    form._cache['coefficient_mapping'] = coefficient_mapping
+    return form
 
 
 @coarsen.register(firedrake.DirichletBC)
@@ -144,18 +146,7 @@ def coarsen_function(expr, coefficient_mapping=None):
 
 @coarsen.register(firedrake.Constant)
 def coarsen_constant(expr, coefficient_mapping=None):
-    if coefficient_mapping is None:
-        coefficient_mapping = {}
-    new = coefficient_mapping.get(expr)
-    if new is None:
-        mesh = coarsen(expr.ufl_domain())
-        if len(expr.ufl_shape) == 0:
-            val = expr.dat.data_ro[0]
-        else:
-            val = expr.dat.data_ro.copy()
-        new = firedrake.Constant(value=val, domain=mesh)
-    return new
-
+    return expr
 
 @coarsen.register(firedrake.NonlinearVariationalProblem)
 def coarsen_nlvp(problem, coefficient_mapping=None):

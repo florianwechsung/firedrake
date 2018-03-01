@@ -226,7 +226,6 @@ class transfer_operators(object):
         while hasattr(V, "_coarse"):
             V = V._coarse
         while hasattr(V, "_fine"):
-            print("Popping")
             pop_transfer_operators(V.dm, match=self.transfer)
             V = V._fine
         pop_transfer_operators(self.V.dm, match=self.transfer)
