@@ -189,6 +189,7 @@ class NonlinearVariationalSolver(solving_utils.ParametersMixin):
         dmhooks.push_appctx(dm, self._ctx)
         self.set_from_options(self.snes)
         dmhooks.pop_appctx(dm)
+        self.tranfer_operators = None
 
     def solve(self, bounds=None):
         """Solve the variational problem.
@@ -217,11 +218,16 @@ class NonlinearVariationalSolver(solving_utils.ParametersMixin):
         with self.inserted_options():
             with dmhooks.appctx(dm, self._ctx):
                 with self._problem.u.dat.vec as u:
-                    u.copy(work)
-                    self.snes.solve(None, work)
-                    work.copy(u)
+                    with self.tranfer_operators:
+                        u.copy(work)
+                        self.snes.solve(None, work)
+                        work.copy(u)
+
 
         solving_utils.check_snes_convergence(self.snes)
+
+    def set_transfer_operators(self, transfer_operators):
+        self.tranfer_operators = transfer_operators
 
 
 class LinearVariationalProblem(NonlinearVariationalProblem):
