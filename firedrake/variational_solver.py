@@ -218,9 +218,12 @@ class NonlinearVariationalSolver(solving_utils.ParametersMixin):
         with self.inserted_options():
             with dmhooks.appctx(dm, self._ctx):
                 with self._problem.u.dat.vec as u:
-                    with self.tranfer_operators:
                         u.copy(work)
-                        self.snes.solve(None, work)
+                        if self.tranfer_operators is None:
+                            self.snes.solve(None, work)
+                        else:
+                            with self.tranfer_operators:
+                                self.snes.solve(None, work)
                         work.copy(u)
 
 
