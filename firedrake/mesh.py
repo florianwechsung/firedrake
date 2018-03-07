@@ -434,7 +434,7 @@ class MeshTopology(object):
         def callback(self):
             """Finish initialisation."""
             del self._callback
-            if self.comm.size > 1 and distribute:
+            if self.comm.size > 1:
                 add_overlap()
 
             if reorder:
