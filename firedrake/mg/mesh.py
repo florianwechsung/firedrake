@@ -46,6 +46,8 @@ class MeshHierarchy(object):
         distribution_parameters.update({"partition": False})
 
         for i in range(refinement_levels*refinements_per_level):
+            for p in range(*cdm.getHeightStratum(1)):
+                cdm.setLabelValue("benzi", p, i + 1)
             rdm = cdm.refine()
             fpoint_ises.append(cdm.createCoarsePointIS())
             # Remove interior facet label (re-construct from
@@ -74,6 +76,8 @@ class MeshHierarchy(object):
                 scale = m._radius / np.linalg.norm(coords, axis=1).reshape(-1, 1)
                 coords *= scale
 
+        for p in range(*cdm.getHeightStratum(1)):
+            cdm.setLabelValue("benzi", p, i + 2)
         hierarchy = [m] + [mesh.Mesh(dm, dim=m.ufl_cell().geometric_dimension(),
                                      distribution_parameters=distribution_parameters,
                                      reorder=reorder)
