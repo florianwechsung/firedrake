@@ -272,7 +272,7 @@ def restrict_kernel(Vf, Vc):
         element = create_element(Vc.ufl_element())
         eval_args = evaluate_kernel.args[:-1]
         args = ", ".join(a.gencode(not_scope=True) for a in eval_args)
-        R, coarse = (a.sym.symbol for a in eval_args)
+        R, fine = (a.sym.symbol for a in eval_args)
         my_kernel = """
         %(to_reference)s
         %(evaluate)s
@@ -285,8 +285,8 @@ def restrict_kernel(Vf, Vc):
                 to_reference_coords_kernel(Xref, X, Xci);
                 if (%(inside_cell)s) {
                     cell = i;
-                    const double *coarsei = %(coarse)s + cell*%(coarse_cell_inc)d;
-                    evaluate_kernel(%(R)s, coarsei, Xref);
+                    const double *Ri = %(R)s + cell*%(coarse_cell_inc)d;
+                    evaluate_kernel(Ri, %(fine)s, Xref);
                 }
             }
         }
@@ -298,7 +298,7 @@ def restrict_kernel(Vf, Vc):
                "coarse_cell_inc": element.space_dimension(),
                "args": args,
                "R": R,
-               "coarse": coarse,
+               "fine": fine,
                "tdim": mesh.topological_dimension()}
 
         return cache.setdefault(key, op2.Kernel(my_kernel, name="restrict_kernel"))
