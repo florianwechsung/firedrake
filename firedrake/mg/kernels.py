@@ -287,6 +287,7 @@ def restrict_kernel(Vf, Vc):
                     cell = i;
                     const double *Ri = %(R)s + cell*%(coarse_cell_inc)d;
                     evaluate_kernel(Ri, %(fine)s, Xref);
+                    break;
                 }
             }
         }
