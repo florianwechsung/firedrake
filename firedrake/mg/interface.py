@@ -5,7 +5,7 @@ from . import utils
 from . import kernels
 
 
-__all__ = ["prolong", "restrict", "inject"]
+__all__ = ["prolong", "restrict", "inject", "prolong_count"]
 
 
 def check_arguments(coarse, fine):
@@ -22,6 +22,65 @@ def check_arguments(coarse, fine):
     if coarse.ufl_shape != fine.ufl_shape:
         raise ValueError("Mismatching function space shapes")
 
+
+def prolong_count(coarse, fine):
+    check_arguments(coarse, fine)
+    Vc = coarse.function_space()
+    Vf = fine.function_space()
+    if len(Vc) > 1:
+        if len(Vc) != len(Vf):
+            raise ValueError("Mixed spaces have different lengths")
+        for in_, out in zip(coarse.split(), fine.split()):
+            prolong(in_, out)
+        return
+
+    if Vc.ufl_element().family() == "Real" or Vf.ufl_element().family() == "Real":
+        assert Vc.ufl_element().family() == "Real"
+        assert Vf.ufl_element().family() == "Real"
+        with fine.dat.vec_wo as dest, coarse.dat.vec_ro as src:
+            src.copy(dest)
+        return
+
+    hierarchy, coarse_level = utils.get_level(coarse.ufl_domain())
+    _, fine_level = utils.get_level(fine.ufl_domain())
+    refinements_per_level = hierarchy.refinements_per_level
+    repeat = (fine_level - coarse_level)*refinements_per_level
+    next_level = coarse_level * refinements_per_level
+
+    element = Vc.ufl_element()
+    meshes = hierarchy._meshes
+    for j in range(repeat):
+        next_level += 1
+        if j == repeat - 1:
+            next = fine
+            Vf = fine.function_space()
+        else:
+            Vf = firedrake.FunctionSpace(meshes[next_level], element)
+            next = firedrake.Function(Vf)
+
+        coarse_coords = Vc.ufl_domain().coordinates
+        fine_to_coarse = utils.fine_node_to_coarse_node_map(Vf, Vc)
+        fine_to_coarse_coords = utils.fine_node_to_coarse_node_map(Vf, coarse_coords.function_space())
+        kernel = kernels.prolong_count_kernel(coarse)
+
+        # XXX: Should be able to figure out locations by pushing forward
+        # reference cell node locations to physical space.
+        # x = \sum_i c_i \phi_i(x_hat)
+        node_locations = utils.physical_node_locations(Vf)
+        # Have to do this, because the node set core size is not right for
+        # this expanded stencil
+        for d in [coarse, coarse_coords]:
+            d.dat._force_evaluation(read=True, write=False)
+            d.dat.global_to_local_begin(op2.READ)
+            d.dat.global_to_local_end(op2.READ)
+        op2.par_loop(kernel, next.node_set,
+                     next.dat(op2.WRITE),
+                     coarse.dat(op2.READ, fine_to_coarse[op2.i[0]]),
+                     node_locations.dat(op2.READ),
+                     coarse_coords.dat(op2.READ, fine_to_coarse_coords[op2.i[0]]))
+        coarse = next
+        Vc = Vf
+    return fine
 
 def prolong(coarse, fine):
     check_arguments(coarse, fine)

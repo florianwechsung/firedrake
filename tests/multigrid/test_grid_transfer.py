@@ -504,7 +504,8 @@ def refinements_per_level(request):
     return request.param
 
 
-@pytest.fixture(scope="module", params=["uniform", "barycentric"])
+# @pytest.fixture(scope="module", params=["uniform", "barycentric"])
+@pytest.fixture(scope="module", params=["barycentric"])
 def hierarchy(cell, refinements_per_level, request):
     if cell == "interval":
         mesh = UnitIntervalMesh(3)
@@ -620,7 +621,14 @@ def run_restriction(hierarchy, vector, space, degrees):
 
             coarse_dual = Function(Vc)
             fine_primal = Function(Vf)
-            restrict(fine_dual, coarse_dual)
+
+            wc = Function(Vc)
+            wc.assign(1.)
+            wf = Function(Vf)
+            prolong_count(wc, wf)
+            fine_dual_w = fine_dual.copy(deepcopy=True)
+            fine_dual_w.vector().set_local(fine_dual.vector().get_local()/wf.vector().get_local())
+            restrict(fine_dual_w, coarse_dual)
             prolong(coarse_primal, fine_primal)
             coarse_functional = functional(coarse_primal, coarse_dual)
             fine_functional = functional(fine_primal, fine_dual)

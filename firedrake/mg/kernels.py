@@ -196,6 +196,61 @@ def compile_element(expression, dual_space=None, parameters=None,
     return kernel_code
 
 
+def prolong_count_kernel(expression):
+    hierarchy, level = utils.get_level(expression.ufl_domain())
+    cache = hierarchy._shared_data_cache["transfer_kernels"]
+    coordinates = expression.ufl_domain().coordinates
+    key = (("prolong_count", ) +
+           expression.ufl_element().value_shape() +
+           entity_dofs_key(expression.function_space().finat_element.entity_dofs()) +
+           entity_dofs_key(coordinates.function_space().finat_element.entity_dofs()))
+    try:
+        return cache[key]
+    except KeyError:
+        mesh = coordinates.ufl_domain()
+        evaluate_kernel = compile_element(expression)
+        to_reference_kernel = to_reference_coordinates(coordinates.ufl_element())
+        element = create_element(expression.ufl_element())
+        eval_args = evaluate_kernel.args[:-1]
+        coords_element = create_element(coordinates.ufl_element())
+
+        args = eval_args[-1].gencode(not_scope=True)
+        R, coarse = (a.sym.symbol for a in eval_args)
+        my_kernel = """
+        %(to_reference)s
+        %(evaluate)s
+        void prolong_count_kernel(double *R, %(args)s, const double *X, const double *Xc)
+        {
+            for ( int i = 0; i < %(Rdim)d; i++ ) {
+                %(R)s[i] = 0;
+            }
+            double Xref[%(tdim)d];
+            int counter = 0;
+            for (int i = 0; i < %(ncandidate)d; i++) {
+                const double *Xci = Xc + i*%(Xc_cell_inc)d;
+                to_reference_coords_kernel(Xref, X, Xci);
+                if (%(inside_cell)s) {
+                    counter++;
+                }
+            }
+            for ( int i = 0; i < %(Rdim)d; i++ ) {
+                %(R)s[i] = counter;
+            }
+        }
+        """ % {"to_reference": str(to_reference_kernel),
+               "evaluate": str(evaluate_kernel),
+               "args": args,
+               "R": R,
+               "coarse": coarse,
+               "ncandidate": hierarchy.fine_to_coarse_cells[level+1].shape[1],
+               "Rdim": numpy.prod(element.value_shape),
+               "inside_cell": inside_check(element.cell, eps=1e-8, X="Xref"),
+               "Xc_cell_inc": coords_element.space_dimension(),
+               "coarse_cell_inc": element.space_dimension(),
+               "tdim": mesh.topological_dimension()}
+
+        return cache.setdefault(key, op2.Kernel(my_kernel, name="prolong_count_kernel"))
+
 def prolong_kernel(expression):
     hierarchy, level = utils.get_level(expression.ufl_domain())
     cache = hierarchy._shared_data_cache["transfer_kernels"]
@@ -221,22 +276,25 @@ def prolong_kernel(expression):
         %(evaluate)s
         void prolong_kernel(double *R, %(args)s, const double *X, const double *Xc)
         {
+            for ( int i = 0; i < %(Rdim)d; i++ ) {
+                %(R)s[i] = 0;
+            }
             double Xref[%(tdim)d];
-            int cell = -1;
+            int counter = 0;
             for (int i = 0; i < %(ncandidate)d; i++) {
                 const double *Xci = Xc + i*%(Xc_cell_inc)d;
                 to_reference_coords_kernel(Xref, X, Xci);
                 if (%(inside_cell)s) {
-                    cell = i;
-                    break;
+                    counter++;
+                    const double *coarsei = %(coarse)s + i*%(coarse_cell_inc)d;
+                    evaluate_kernel(%(R)s, coarsei, Xref);
                 }
             }
-            if (cell == -1) abort();
-            const double *coarsei = %(coarse)s + cell*%(coarse_cell_inc)d;
+            if (counter == 0) abort();
             for ( int i = 0; i < %(Rdim)d; i++ ) {
-                %(R)s[i] = 0;
+                //%(R)s[i] *= 1./counter;
+                %(R)s[i] = counter;
             }
-            evaluate_kernel(%(R)s, coarsei, Xref);
         }
         """ % {"to_reference": str(to_reference_kernel),
                "evaluate": str(evaluate_kernel),
@@ -287,7 +345,6 @@ def restrict_kernel(Vf, Vc):
                     cell = i;
                     const double *Ri = %(R)s + cell*%(coarse_cell_inc)d;
                     evaluate_kernel(Ri, %(fine)s, Xref);
-                    break;
                 }
             }
         }
