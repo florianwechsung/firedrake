@@ -292,8 +292,7 @@ def prolong_kernel(expression):
             }
             if (counter == 0) abort();
             for ( int i = 0; i < %(Rdim)d; i++ ) {
-                //%(R)s[i] *= 1./counter;
-                %(R)s[i] = counter;
+                %(R)s[i] *= 1./counter;
             }
         }
         """ % {"to_reference": str(to_reference_kernel),
